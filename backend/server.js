@@ -62,30 +62,30 @@ async function scanOnce() {
     }
 
     async function saveCycle() {
-    if (saving) return;
-    saving = true;
-    try {
-        if (!opc.isOnline()) return;
-    
-        const timestamp = db.getAligned5MinTimestamp();
-        for (const name of opc.stationNames()) {
-            if (!hasWaterLevel(name)) continue;
-            try {
-                const raw = await opc.readStationRaw(name);
-                const validCount = Object.values(raw).filter((v) => v.ok).length;
-                const online = validCount > 0;
-                const upstream = extractLevel(raw, "UpStream");
-                const downstream = extractLevel(raw, "DownStream");
-                await db.saveWaterLevel({ station: name, upstream, downstream, online, timestamp });
-                console.log(`Saved ${name} @ ${timestamp}: up=${upstream} down=${downstream} online=${online}`);
-            } catch (err) {
-                // One station failing to save never blocks the others in this loop.
-                console.error(`Failed to save ${name}: ${err.message}`);
+        if (saving) return;
+        saving = true;
+        try {
+            if (!opc.isOnline()) return;
+        
+            const timestamp = db.getAligned5MinTimestamp();
+            for (const name of opc.stationNames()) {
+                if (!hasWaterLevel(name)) continue;
+                try {
+                    const raw = await opc.readStationRaw(name);
+                    const validCount = Object.values(raw).filter((v) => v.ok).length;
+                    const online = validCount > 0;
+                    const upstream = extractLevel(raw, "UpStream");
+                    const downstream = extractLevel(raw, "DownStream");
+                    await db.saveWaterLevel({ station: name, upstream, downstream, online, timestamp });
+                    console.log(`Saved ${name} @ ${timestamp}: up=${upstream} down=${downstream} online=${online}`);
+                } catch (err) {
+                    // One station failing to save never blocks the others in this loop.
+                    console.error(`Failed to save ${name}: ${err.message}`);
+                }
             }
+        } finally {
+            saving = false;
         }
-    } finally {
-        saving = false;
-    }
     }
 }
 
