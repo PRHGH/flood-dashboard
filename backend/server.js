@@ -1,6 +1,6 @@
 const opc = require("./opc");
 
-const SCAN_INTERVAL_MS = Number(proces.env.SCAN_INTERVAL_MS || 1000);
+const SCAN_INTERVAL_MS = Number(process.env.SCAN_INTERVAL_MS || 1000);
 
 let scanning = false;
 
@@ -41,5 +41,5 @@ async function scanOnce() {
 (async () => {
     await opc.connectOPCUA();
     await scanOnce();
-    setInterval(scaneOnce, SCAN_INTERVAL_MS);
+    setInterval(scanOnce, SCAN_INTERVAL_MS);
 }) ();
