@@ -14,10 +14,18 @@ function safeNumber(v) {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+// Some sensors (observed on Ambathale) report raw centimeters instead of
+// meters. A real flood-station water level is never above ~20m, so any
+// value bigger than that is almost certainly centimeters - convert it.
+function normalizeLevel(v) {
+  if (v === null) return null;
+  return v > 20 ? v / 100 : v;
+}
+
 function extractLevel(raw, key) {
   const entry = raw[key];
   if (!entry || !entry.ok) return null;
-  return safeNumber(entry.value);
+  return normalizeLevel(safeNumber(entry.value));
 }
 
 // Only the stations whose station.js config actually defines an UpStream
