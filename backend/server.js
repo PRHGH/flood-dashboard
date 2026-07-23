@@ -9,7 +9,7 @@ const db = require("./database");
 const stations = require("./station");
 
 const PORT = Number(process.env.PORT || 8081);
-const API_KEY = process.env.API_KEY || "scadata_12345";
+const API_KEY = process.env.API_KEY || "";
 const SCAN_INTERVAL_MS = Number(process.env.SCAN_INTERVAL_MS || 1000);
 const SAVE_INTERVAL_MS = Number(process.env.SAVE_INTERVAL_MS || 5 * 60 * 1000);
 const CLEANUP_INTERVAL_MS = Number(process.env.CLEANUP_INTERVAL_MS || 60 * 60 * 1000);
