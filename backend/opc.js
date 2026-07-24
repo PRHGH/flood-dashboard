@@ -9,6 +9,27 @@ let session = null;
 let opcOnline = false;
 let connecting = false;
 
+// A timeout on its own isn't fatal - a station can genuinely be slow for
+// one cycle and recover. But our timeout only makes OUR CODE stop waiting;
+// it does NOT cancel the underlying request on the OPC UA channel. If a
+// tag is truly stuck (permanently unanswered - e.g. a dead sensor, not
+// just a slow one), that request sits on the shared session forever, and
+// since a channel processes one request at a time, EVERY subsequent read -
+// for any station, including perfectly healthy ones - queues up behind it
+// and can never get a turn. That's what turns "one dead tag" into "every
+// station times out, forever": the channel is jammed, not the stations.
+//
+// Detect that pattern (several timeouts stacking up back-to-back, roughly
+// one full pass over the station list with none of them succeeding) and
+// force a full reconnect - this discards the stuck request/session/channel
+// and gets a fresh one, which is the only way to actually recover once
+// this happens. A single successful read of any kind resets the counter,
+// so this never fires just because one station is genuinely, individually
+// down (that's handled separately, by the backoff logic in server.js).
+let consecutiveTimeouts = 0;
+const MAX_CONSECUTIVE_TIMEOUTS = Number(process.env.MAX_CONSECUTIVE_TIMEOUTS || 4);
+let reconnecting = false;
+
 function isConnectionClosedError(message = "") {
   return (
     message.includes("BadConnectionClosed") ||
@@ -41,20 +62,6 @@ async function connectOPCUA() {
       endpointMustExist: false,
       requestedSessionTimeout: 120000,
       defaultSecureTokenLifetime: 120000,
-      // NOTE: deliberately NOT setting defaultTransactionTimeout here.
-      // That option applies to every message the client sends, including
-      // the internal GetEndpoints/CreateSession handshake performed by
-      // connect()/createSession() - setting it too short (e.g. 3s) can
-      // abort the handshake itself and leave node-opcua's internal
-      // request bookkeeping in a bad state ("Investigate me" /
-      // "request has already been set with a requestHandle" errors).
-      // The fast timeout we actually want only applies to the repeated
-      // per-station tag reads, enforced below via readWithTimeout().
-      //
-      // Our own scan loop already retries every SCAN_INTERVAL_MS, so we
-      // disable node-opcua's internal connection retry (maxRetry: 0) to
-      // avoid its retry loop and ours compounding into overlapping
-      // handshake attempts.
       connectionStrategy: { maxRetry: 0 },
     });
 
@@ -74,9 +81,6 @@ async function connectOPCUA() {
 }
 
 function readWithTimeout(promise, ms, label) {
-  // If we time out before `promise` settles, it may still resolve/reject
-  // later in the background with nothing listening - swallow that so it
-  // doesn't surface as an unhandled rejection.
   promise.catch(() => {});
   return Promise.race([
     promise,
@@ -86,12 +90,6 @@ function readWithTimeout(promise, ms, label) {
   ]);
 }
 
-/*
-  Reads every tag for one station in a single batched request.
-  Never throws: a failed session, a failed batch read, or an
-  individual bad value all resolve to safe fallbacks so the
-  caller never needs its own try/catch around this.
-*/
 async function readStationRaw(stationName) {
   const config = stations[stationName];
   if (!config) return {};
@@ -122,13 +120,28 @@ async function readStationRaw(stationName) {
       const value = dataValue?.value?.value ?? null;
       values[key] = { value, status, ok: status === "Good" && value !== null };
     });
+    consecutiveTimeouts = 0; // any successful round-trip proves the channel is alive
     return values;
   } catch (err) {
     if (isConnectionClosedError(err.message || "")) {
       console.warn(`OPC channel issue during ${stationName} read: ${err.message}`);
+      consecutiveTimeouts = 0;
       await closeOPCUA();
     } else {
       console.warn(`Batch read failed for ${stationName}: ${err.message}`);
+      consecutiveTimeouts += 1;
+      if (consecutiveTimeouts >= MAX_CONSECUTIVE_TIMEOUTS && !reconnecting) {
+        reconnecting = true;
+        console.warn(
+          `${consecutiveTimeouts} read timeouts in a row - OPC UA channel looks jammed behind a stuck request, forcing reconnect`
+        );
+        consecutiveTimeouts = 0;
+        try {
+          await closeOPCUA();
+        } finally {
+          reconnecting = false;
+        }
+      }
     }
     return {};
   }
