@@ -176,19 +176,27 @@ async function saveCycle() {
   if (saving) return;
   saving = true;
   try {
-    if (!opc.isOnline()) return;
+    // Reuse the most recent broadcast reading instead of re-polling the
+    // same (confirmed slow, remote) field link independently. This halves
+    // total OPC UA traffic - the broadcast cycle already has fresh data,
+    // there's no need to ask the field devices twice for the same thing.
+    if (!lastPayload || !lastPayload.opcOnline) return;
 
     const timestamp = db.getAligned5MinTimestamp();
     for (const name of opc.stationNames()) {
       if (!hasWaterLevel(name)) continue;
+      const station = lastPayload.stations[name];
+      if (!station) continue;
       try {
-        const raw = await opc.readStationRaw(name);
-        const validCount = Object.values(raw).filter((v) => v.ok).length;
-        const online = validCount > 0;
-        const upstream = extractLevel(raw, "UpStream");
-        const downstream = extractLevel(raw, "DownStream");
-        await db.saveWaterLevel({ station: name, upstream, downstream, online, timestamp });
+        await db.saveWaterLevel({
+          station: name,
+          upstream: station.upstream,
+          downstream: station.downstream,
+          online: station.stationOnline,
+          timestamp,
+        });
       } catch (err) {
+        // One station failing to save never blocks the others.
         console.error(`Failed to save ${name}: ${err.message}`);
       }
     }
