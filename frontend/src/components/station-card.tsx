@@ -10,12 +10,12 @@ const GATE_COLOR: Record<GateStatus, string> = {
 const GATE_LABEL: Record<GateStatus, string> = {
   OPEN: "Open",
   CLOSE: "Closed",
-  INTERMEDIATE: "Partial",
+  INTERMEDIATE: "Intermediate",
   UNKNOWN: "Unknown",
 };
 
 function formatLevel(v: number | null): string {
-  return v === null ? "—" : `${v.toFixed(2)} m`;
+  return v === null ? "—" : `${v.toFixed(2)} m MSL`;
 }
 
 function Pill({ color, label }: { color: string; label: string }) {

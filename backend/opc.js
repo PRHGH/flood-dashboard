@@ -1,4 +1,3 @@
-require("dotenv").config();
 const { OPCUAClient, AttributeIds } = require("node-opcua");
 const stations = require("./station");
 
