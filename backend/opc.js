@@ -61,6 +61,16 @@ async function connectOPCUA() {
     console.log(`Connecting to OPC UA: ${OPC_ENDPOINT}`);
     await client.connect(OPC_ENDPOINT);
     session = await client.createSession();
+
+    // The first few reads issued immediately after a fresh session
+    // consistently time out on this server (observed: request handles
+    // 12-14, every single restart, regardless of other connected
+    // clients) - the server/channel needs a moment to settle before it
+    // can answer promptly. A short deliberate pause here is cheaper and
+    // more reliable than hoping the read timeout is long enough to
+    // absorb it.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     opcOnline = true;
     console.log("Connected to OPC UA server");
   } catch (err) {
